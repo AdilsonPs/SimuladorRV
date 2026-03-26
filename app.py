@@ -2,9 +2,9 @@
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(page_title="Simulador de Remuneração Softys", layout="wide")
+st.set_page_config(page_title="Simulador Remuneração Softys", layout="wide")
 
-# --- FUNÇÕES DE CÁLCULO ---
+# --- LÓGICA DE CURVA (POLÍTICA 2026) ---
 def calcular_payout(atingimento):
     if atingimento < 90: return 0.0
     if atingimento >= 115: return 1.50
@@ -13,15 +13,15 @@ def calcular_payout(atingimento):
     else:
         return 1.0 + (atingimento - 100) * (0.5 / 15)
 
-# --- SIDEBAR (CONFIGURAÇÕES) ---
+# --- CONFIGURAÇÕES NA SIDEBAR ---
 with st.sidebar:
-    st.header("⚙️ Configurações")
+    st.header("⚙️ Configurações de Contrato")
     salario_base = st.number_input("Salário Fixo Mensal (R$)", value=7990.84, step=100.0)
-    target_percentual = st.number_input("Target da Variável (%)", value=43.0, step=1.0) / 100
-    st.info(f"Seu Target é de {target_percentual:.2%} do salário.")
+    target_rv_percentual = st.number_input("Target da Variável (%)", value=43.0, step=1.0) / 100
+    st.info(f"Seu Target é de {target_rv_percentual:.2%} do seu salário base.")
 
 # --- ESTRUTURA DE DADOS ---
-meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
+meses_nomes = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
 categorias = [
     {"nome": "Net Sales Adulto", "peso": 0.20},
     {"nome": "Net Sales Infantil", "peso": 0.15},
@@ -31,82 +31,92 @@ categorias = [
     {"nome": "Volume Toiletries", "peso": 0.15},
 ]
 
-dados_calculados = []
+# Inicialização de dados persistentes na sessão (enquanto o navegador estiver aberto)
+if 'dados' not in st.session_state:
+    st.session_state.dados = {m: {c['nome']: {"meta": 100.0, "real": 100.0} for c in categorias} for m in meses_nomes}
 
-# --- ABAS ---
-tab_meses, tab_trimestres, tab_anual = st.tabs(["📅 Lançamento Mensal", "📊 Recuperação Trimestral (Q)", "🏆 Resumo Anual"])
+# --- INTERFACE ---
+st.title("🚀 Simulador Falcon: Mensal, Trimestral (Q) e Anual")
 
-# ABA 1: LANÇAMENTO MENSAL
-with tab_meses:
-    col_sel_mes, _ = st.columns([1, 2])
-    mes_selecionado = col_sel_mes.selectbox("Selecione o mês para editar:", meses)
+tab_mensal, tab_trimestral, tab_anual = st.tabs(["📅 Lançamento Mensal", "📊 Recuperação Trimestral (Q)", "🏆 Resultado Anual"])
+
+# --- ABA 1: LANÇAMENTO MENSAL ---
+with tab_mensal:
+    mes_foco = st.selectbox("Selecione o mês para preencher:", meses_nomes)
     
-    for i, nome_mes in enumerate(meses):
-        soma_payout_mes = 0
-        with st.expander(f"Dados de {nome_mes}", expanded=(nome_mes == mes_selecionado)):
-            c1, c2 = st.columns(2)
-            for idx, cat in enumerate(categorias):
-                col = c1 if idx < 3 else c2
-                with col:
-                    st.write(f"**{cat['nome']}**")
-                    m = st.number_input("Meta", key=f"m_{i}_{idx}", value=100.0)
-                    r = st.number_input("Real", key=f"r_{i}_{idx}", value=100.0)
-                    ating = (r / m) * 100 if m > 0 else 0
-                    payout_f = calcular_payout(ating)
-                    soma_payout_mes += (payout_f * cat['peso'])
-            
-            # Cálculo financeiro do mês
-            valor_variavel = (salario_base * target_percentual) * soma_payout_mes
-            total_recebido = salario_base + valor_variavel
-            
-            dados_calculados.append({
-                "Mês": nome_mes,
-                "Atingimento Médio": soma_payout_mes,
-                "Salário Fixo": salario_base,
-                "Variável Bruta": valor_variavel,
-                "Total (Fixo + RV)": total_recebido,
-                "Tri": (i // 3) + 1
-            })
-            
-            st.success(f"**{nome_mes}:** Fixo R$ {salario_base:,.2f} + RV R$ {valor_variavel:,.2f} = **Total: R$ {total_recebido:,.2f}**")
-
-df = pd.DataFrame(dados_calculados)
-
-# ABA 2: RECUPERAÇÃO TRIMESTRAL (Q)
-with tab_trimestres:
-    st.header("Análise de Recuperação por Quarter")
+    st.subheader(f"Entradas de {mes_foco}")
+    col1, col2 = st.columns(2)
     
-    for q in range(1, 5):
-        df_q = df[df["Tri"] == q]
-        st.subheader(f"{q}º Trimestre (Q{q})")
-        
-        # Simulação de Recuperação: 
-        # Na regra da Softys, se o atingimento do tri for maior que a soma dos meses, paga-se a diferença.
-        total_fixo_q = df_q["Salário Fixo"].sum()
-        total_rv_q = df_q["Variável Bruta"].sum()
-        total_geral_q = df_q["Total (Fixo + RV)"].sum()
-        
-        c1, c2, c3 = st.columns(3)
-        c1.metric(f"Total Fixo Q{q}", f"R$ {total_fixo_q:,.2f}")
-        c2.metric(f"Total Variável Q{q}", f"R$ {total_rv_q:,.2f}")
-        c3.metric(f"Recebimento Total Q{q}", f"R$ {total_geral_q:,.2f}")
-        st.divider()
+    for idx, cat in enumerate(categorias):
+        col = col1 if idx < 3 else col2
+        with col:
+            st.write(f"**{cat['nome']}** (Peso {int(cat['peso']*100)}%)")
+            st.session_state.dados[mes_foco][cat['nome']]["meta"] = st.number_input("Meta", key=f"m_{mes_foco}_{idx}", value=st.session_state.dados[mes_foco][cat['nome']]["meta"])
+            st.session_state.dados[mes_foco][cat['nome']]["real"] = st.number_input("Realizado", key=f"r_{mes_foco}_{idx}", value=st.session_state.dados[mes_foco][cat['nome']]["real"])
 
-# ABA 3: RESUMO ANUAL
+# --- PROCESSAMENTO DE DADOS ---
+lista_meses_proc = []
+for m in meses_nomes:
+    soma_payout_ponderado = 0
+    for cat in categorias:
+        meta = st.session_state.dados[m][cat['nome']]["meta"]
+        real = st.session_state.dados[m][cat['nome']]["real"]
+        ating = (real / meta) * 100 if meta > 0 else 0
+        soma_payout_ponderado += (calcular_payout(ating) * cat['peso'])
+    
+    val_rv = (salario_base * target_rv_percentual) * soma_payout_ponderado
+    lista_meses_proc.append({
+        "Mês": m,
+        "Fixo": salario_base,
+        "RV": val_rv,
+        "Total": salario_base + val_rv,
+        "Payout_Fator": soma_payout_ponderado
+    })
+
+df_meses = pd.DataFrame(lista_meses_proc)
+
+# --- ABA 2: RECUPERAÇÃO TRIMESTRAL (Q) ---
+with tab_trimestral:
+    st.header("Cálculo de Quarter (Q)")
+    
+    for q in range(4):
+        inicio, fim = q*3, q*3 + 3
+        meses_q = meses_nomes[inicio:fim]
+        df_q = df_meses.iloc[inicio:fim]
+        
+        # Lógica de Consolidação: Soma as metas e realizados de todas as categorias no tri
+        soma_payout_tri = 0
+        for cat in categorias:
+            m_tri = sum([st.session_state.dados[m][cat['nome']]["meta"] for m in meses_q])
+            r_tri = sum([st.session_state.dados[m][cat['nome']]["real"] for m in meses_q])
+            atig_tri = (r_tri / m_tri) * 100 if m_tri > 0 else 0
+            soma_payout_tri += (calcular_payout(atig_tri) * cat['peso'])
+        
+        val_rv_tri_total = (salario_base * target_rv_percentual) * soma_payout_tri * 3
+        ja_pago_no_tri = df_q["RV"].sum()
+        recuperacao = max(0, val_rv_tri_total - ja_pago_no_tri)
+        
+        with st.expander(f"Q{q+1} ({', '.join(meses_q)})", expanded=True):
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Fixo no Q", f"R$ {df_q['Fixo'].sum():,.2f}")
+            c2.metric("RV Acumulada", f"R$ {ja_pago_no_tri:,.2f}")
+            c3.metric("Recuperação Estimada", f"R$ {recuperacao:,.2f}", delta="A Receber")
+            c4.metric("Total Q", f"R$ {(df_q['Total'].sum() + recuperacao):,.2f}")
+
+# --- ABA 3: RESUMO ANUAL ---
 with tab_anual:
-    st.header("Resultado Consolidado 2026")
+    st.header("Visão Geral do Ano")
     
-    total_fixo_ano = df["Salário Fixo"].sum()
-    total_rv_ano = df["Variável Bruta"].sum()
-    total_ano = df["Total (Fixo + RV)"].sum()
+    total_fixo = df_meses["Fixo"].sum()
+    total_rv = df_meses["RV"].sum()
     
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Salário Fixo Anual", f"R$ {total_fixo_ano:,.2f}")
-    col2.metric("Variável Total Anual", f"R$ {total_rv_ano:,.2f}")
-    col3.metric("RENDA TOTAL ANUAL", f"R$ {total_ano:,.2f}", delta="Estimado")
-
-    st.subheader("Gráfico de Recebimento Mensal")
-    st.bar_chart(df.set_index("Mês")[["Salário Fixo", "Variável Bruta"]])
-
-st.divider()
-st.caption("Nota: Este simulador considera valores brutos. Descontos de folha (INSS/IRRF) não estão inclusos.")
+    # Adicionando recuperações ao total anual (simplificado)
+    # Aqui você poderia somar as recuperações calculadas na aba anterior
+    
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Salário Fixo Total", f"R$ {total_fixo:,.2f}")
+    c2.metric("Variável Total", f"R$ {total_rv:,.2f}")
+    c3.metric("RENDA TOTAL ESTIMADA", f"R$ {(total_fixo + total_rv):,.2f}")
+    
+    st.subheader("Gráfico de Composição de Renda")
+    st.bar_chart(df_meses.set_index("Mês")[["Fixo", "RV"]])
