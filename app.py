@@ -1,1 +1,39 @@
-import streamlit as stimport pandas as pd# Configuração da Páginast.set_page_config(page_title="Simulador de RV - Softys Falcon", layout="wide")def calcular_payout(atingimento):    """Aplica a curva de atingimento da política 2026"""    if atingimento < 90:        return 0.0    elif atingimento >= 115:        return 1.50  # Teto de 150%    else:        # Interpolação simplificada da curva (90%=80%, 100%=100%, 115%=150%)        if atingimento < 100:            return 0.8 + (atingimento - 90) * (0.2 / 10)        else:            return 1.0 + (atingimento - 100) * (0.5 / 15)def render_mes(nome_mes):    st.subheader(f"Entradas de {nome_mes}")    col1, col2 = st.columns(2)        with col1:        st.write("**Net Sales (Peso 50%)**")        meta_ns = st.number_input(f"Meta Net Sales - {nome_mes}", min_value=1.0, key=f"meta_ns_{nome_mes}")        real_ns = st.number_input(f"Realizado Net Sales - {nome_mes}", min_value=0.0, key=f"real_ns_{nome_mes}")        with col2:        st.write("**Volume (Peso 50%)**")        meta_vol = st.number_input(f"Meta Volume - {nome_mes}", min_value=1.0, key=f"meta_vol_{nome_mes}")        real_vol = st.number_input(f"Realizado Volume - {nome_mes}", min_value=0.0, key=f"real_vol_{nome_mes}")        atig_ns = (real_ns / meta_ns) * 100 if meta_ns > 0 else 0    atig_vol = (real_vol / meta_vol) * 100 if meta_vol > 0 else 0        payout_ns = calcular_payout(atig_ns)    payout_vol = calcular_payout(atig_vol)        # Cálculo final do mês baseado no Target de 0,43 salários    # Cada bloco (NS e Vol) vale 50% do prêmio    salarios_mes = (0.43 * 0.5 * payout_ns) + (0.43 * 0.5 * payout_vol)        return {        "mes": nome_mes,        "meta_ns": meta_ns,        "real_ns": real_ns,        "meta_vol": meta_vol,        "real_vol": real_vol,        "atig_ns": atig_ns,        "atig_vol": atig_vol,        "salarios": salarios_mes    }# --- INTERFACE ---st.title("?? Simulador de Remuneração Variável")st.markdown("Baseado na Política 2026 - Executivos e Coordenadores")with st.sidebar:    st.header("Configurações Base")    salario_base = st.number_input("Salário Base (R$)", value=7990.84)    target_rv = 0.43 # Conforme documento do Adilson    st.info(f"Target: {target_rv} salários")tabs = st.tabs(["Janeiro", "Fevereiro", "Março", "Recuperação Trimestral"])dados_trimestre = []with tabs[0]:    dados_trimestre.append(render_mes("Janeiro"))with tabs[1]:    dados_trimestre.append(render_mes("Fevereiro"))with tabs[2]:    dados_trimestre.append(render_mes("Março"))with tabs[3]:    st.header("Resultado Consolidado do Trimestre")    df = pd.DataFrame(dados_trimestre)        # Cálculos de Recuperação (Soma das metas vs Soma dos realizados)    total_meta_ns = df['meta_ns'].sum()    total_real_ns = df['real_ns'].sum()    total_meta_vol = df['meta_vol'].sum()    total_real_vol = df['real_vol'].sum()        atig_tri_ns = (total_real_ns / total_meta_ns) * 100 if total_meta_ns > 0 else 0    atig_tri_vol = (total_real_vol / total_meta_vol) * 100 if total_meta_vol > 0 else 0        payout_tri = (0.43 * 0.5 * calcular_payout(atig_tri_ns)) + (0.43 * 0.5 * calcular_payout(atig_tri_vol))        soma_pagamentos_mensais = df['salarios'].sum()    recuperacao = max(0, payout_tri - soma_pagamentos_mensais)        col_res1, col_res2, col_res3 = st.columns(3)    col_res1.metric("Salários Acumulados (Mensal)", f"{soma_pagamentos_mensais:.3f}")    col_res2.metric("Cálculo Trimestral (Consolidado)", f"{payout_tri:.3f}")    col_res3.metric("A Recuperar", f"{recuperacao:.3f} salários", delta_color="normal")    st.divider()    valor_final_rs = (soma_pagamentos_mensais + recuperacao) * salario_base    st.success(f"**Valor Estimado a Receber no Período: R$ {valor_final_rs:,.2f}**")# Botão para "Salvar" (Simulação de persistência)if st.button("Salvar Simulação"):    # Aqui poderíamos conectar com Google Sheets ou SQLite    st.toast("Dados guardados localmente para esta sessão!", icon="??")
+# -*- coding: utf-8 -*-
+import streamlit as st
+import pandas as pd
+
+# Configura√ß√£o da P√°gina
+st.set_page_config(page_title="Simulador de RV - Softys Falcon", layout="wide")
+
+def calcular_payout(atingimento):
+    """Aplica a curva de atingimento da pol√≠tica 2026"""
+    if atingimento < 90:
+        return 0.0
+    elif atingimento >= 115:
+        return 1.50
+    else:
+        if atingimento < 100:
+            return 0.8 + (atingimento - 90) * (0.2 / 10)
+        else:
+            return 1.0 + (atingimento - 100) * (0.5 / 15)
+
+st.title("üìä Simulador de Remunera√ß√£o Vari√°vel")
+st.markdown("Baseado na Pol√≠tica 2026 - Softys")
+
+with st.sidebar:
+    st.header("Configura√ß√µes Base")
+    salario_base = st.number_input("Sal√°rio Base (R$)", value=7990.84)
+    target_rv = 0.43 
+    st.info(f"Target: {target_rv} sal√°rios")
+
+# Interface Simples para teste
+mes = st.selectbox("Selecione o M√™s", ["Janeiro", "Fevereiro", "Mar√ßo"])
+meta = st.number_input(f"Meta de Net Sales ({mes})", min_value=1.0, value=240500.0)
+real = st.number_input(f"Realizado de Net Sales ({mes})", min_value=0.0, value=317140.0)
+
+atig = (real / meta) * 100
+payout = calcular_payout(atig)
+resultado = (salario_base * target_rv) * payout
+
+st.metric("Atingimento", f"{atig:.2f}%")
+st.success(f"Valor Estimado: R$ {resultado:,.2f}")
