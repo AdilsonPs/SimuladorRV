@@ -2,7 +2,7 @@
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(page_title="Simulador Softys Falcon 2026", layout="wide")
+st.set_page_config(page_title="Simulador Softys 2026", layout="wide")
 
 # --- LÓGICA DE CÁLCULO (POLÍTICA 2026) ---
 def calcular_payout(atingimento):
@@ -13,19 +13,12 @@ def calcular_payout(atingimento):
     else:
         return 1.0 + (atingimento - 100) * (0.5 / 15)
 
-def calcular_bloco(meta, realizado, peso_relativo):
-    atingimento = (realizado / meta) * 100 if meta > 0 else 0
-    payout_fator = calcular_payout(atingimento)
-    # O peso final no salário depende do target (0.43) e do peso da categoria
-    salarios = 0.43 * peso_relativo * payout_fator
-    return atingimento, salarios
-
 # --- INTERFACE ---
-st.title("🚀 Simulador de Performance Comercial Softys")
-st.sidebar.header("Configurações de Perfil")
+st.title("📊 Simulador de Pagamentos Softys")
+st.sidebar.header("Dados Cadastrais")
 salario_base = st.sidebar.number_input("Salário Base (R$)", value=7990.84)
+target_rv = 0.43 # Conforme extrato
 
-# Estrutura de dados para armazenar os meses
 meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
 categorias = [
     {"nome": "Net Sales Adulto", "peso": 0.20},
@@ -36,52 +29,62 @@ categorias = [
     {"nome": "Volume Toiletries", "peso": 0.15},
 ]
 
-historico = []
+# Dicionário para guardar os resultados
+resultados_mensais = []
 
 # Abas por Trimestre
-abas_tri = st.tabs(["1º Trimestre", "2º Trimestre", "3º Trimestre", "4º Trimestre", "Resumo Anual"])
+abas_tri = st.tabs(["1º Tri", "2º Tri", "3º Tri", "4º Tri", "💰 Resumo de Recebimento"])
 
-for i, tri in enumerate(abas_tri[:4]):
-    with tri:
-        cols_meses = st.columns(3)
+for i, tri_aba in enumerate(abas_tri[:4]):
+    with tri_aba:
+        cols = st.columns(3)
         for j in range(3):
             mes_idx = i * 3 + j
             nome_mes = meses[mes_idx]
-            
-            with cols_meses[j]:
-                with st.expander(f"📊 Dados de {nome_mes}", expanded=(j==0)):
-                    salario_acumulado_mes = 0
+            with cols[j]:
+                with st.expander(f"Editar {nome_mes}", expanded=False):
+                    soma_payout_pesado = 0
                     for cat in categorias:
-                        st.caption(f"**{cat['nome']}** (Peso {int(cat['peso']*100)}%)")
-                        m = st.number_input(f"Meta", key=f"m_{mes_idx}_{cat['nome']}", value=100.0)
-                        r = st.number_input(f"Real", key=f"r_{mes_idx}_{cat['nome']}", value=100.0)
+                        st.write(f"**{cat['nome']}**")
+                        m = st.number_input("Meta", key=f"m_{mes_idx}_{cat['nome']}", value=100.0)
+                        r = st.number_input("Real", key=f"r_{mes_idx}_{cat['nome']}", value=100.0)
                         
-                        atig, sal = calcular_bloco(m, r, cat['peso'])
-                        salario_acumulado_mes += sal
+                        ating = (r / m) * 100 if m > 0 else 0
+                        payout_fator = calcular_payout(ating)
+                        soma_payout_pesado += (payout_fator * cat['peso'])
                     
-                    st.metric("Total Mês (Salários)", f"{salario_acumulado_mes:.3f}")
-                    historico.append({"mes": nome_mes, "salarios": salario_acumulado_mes, "tri": i+1})
+                    # Cálculo final do mês
+                    total_salarios_mes = target_rv * soma_payout_pesado
+                    valor_reais_mes = total_salarios_mes * salario_base
+                    
+                    resultados_mensais.append({
+                        "Mês": nome_mes,
+                        "Salários": round(total_salarios_mes, 3),
+                        "Valor (R$)": round(valor_reais_mes, 2),
+                        "Previsão PGTO": "Mês seguinte"
+                    })
+                    st.metric("Total no Mês", f"R$ {valor_reais_mes:,.2f}")
 
-# --- ABA RESUMO ANUAL E RECUPERAÇÃO ---
+# --- ABA DE PAGAMENTOS (A MAIS IMPORTANTE AGORA) ---
 with abas_tri[4]:
-    st.header("Análise Consolidada")
-    df = pd.DataFrame(historico)
+    st.header("Cronograma de Recebimento")
+    df_pagos = pd.DataFrame(resultados_mensais)
     
-    col_an1, col_an2 = st.columns(2)
+    # Exibir Tabela Detalhada
+    st.table(df_pagos)
     
-    total_salarios_ano = df['salarios'].sum()
-    col_an1.metric("Acumulado do Ano (Salários)", f"{total_salarios_ano:.3f}")
-    col_an1.metric("Total em Dinheiro", f"R$ {(total_salarios_ano * salario_base):,.2f}")
+    # Resumos em Cards
+    c1, c2, c3 = st.columns(3)
+    total_acumulado = df_pagos["Valor (R$)"].sum()
+    c1.metric("Total Acumulado (Ano)", f"R$ {total_acumulado:,.2f}")
+    c2.metric("Média Mensal", f"R$ {(total_acumulado/12):,.2f}")
+    c3.metric("Maior Recebimento", f"R$ {df_pagos['Valor (R$)'].max():,.2f}")
 
-    # Gráfico simples de evolução
-    st.subheader("Evolução Mensal")
-    st.line_chart(df.set_index('mes')['salarios'])
+    st.subheader("Visualização por Mês de Caixa")
+    st.bar_chart(df_pagos.set_index("Mês")["Valor (R$)"])
+    
+    st.warning("⚠️ Lembre-se: Os valores acima são brutos. Incidem descontos de IRRF e INSS conforme a folha.")
 
-    st.info("""
-    **Nota sobre Recuperação:** O sistema de recuperação trimestral compara a média do seu atingimento no bloco de 3 meses 
-    contra o que foi pago individualmente. Se o consolidado for maior, a diferença é paga no fechamento do trimestre.
-    """)
-
-# Rodapé Fixo
+# Rodapé
 st.divider()
-st.markdown(f"**Target Simulado:** 0.43 salários | **Status:** Aguardando fechamento oficial.")
+st.caption("Desenvolvido para simulação de metas Softys Falcon 2026.")
