@@ -2,99 +2,106 @@
 import streamlit as st
 import pandas as pd
 
-# Layout configurado para modo Wide (estilo Dashboard Profissional)
-st.set_page_config(page_title="Sales Pulse Prime", layout="wide", initial_sidebar_state="expanded")
+# Configuração da página para um visual de App
+st.set_page_config(page_title="Sales Pulse | Softys", layout="wide")
 
-# --- CORREÇÃO DO ESTILO CSS ---
+# --- ESTILO CUSTOMIZADO (CSS) ---
 st.markdown("""
     <style>
-    .main { background-color: #f8fafc; }
-    div[data-testid="stMetricValue"] { font-size: 22px; color: #1e293b; }
-    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 12px; border: 1px solid #e2e8f0; }
-    [data-testid="stSidebar"] { background-color: #0f172a; }
+    .main { background-color: #f1f5f9; }
+    div[data-testid="stMetric"] {
+        background-color: #ffffff;
+        border-radius: 10px;
+        padding: 15px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .stTabs [data-baseweb="tab-list"] { gap: 20px; }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        background-color: #ffffff;
+        border-radius: 5px 5px 0 0;
+        padding: 0 20px;
+    }
     </style>
-    """, unsafe_allow_html=True) # <-- AQUI ESTAVA O ERRO (CORRIGIDO)
+    """, unsafe_allow_html=True)
 
-# --- FUNÇÕES DE CÁLCULO ---
-def calcular_payout(atingimento):
-    if atingimento < 90: return 0.0
-    if atingimento >= 115: return 1.50
-    if atingimento < 100: return 0.8 + (atingimento - 90) * (0.02)
-    return 1.0 + (atingimento - 100) * (0.0333)
+# --- LÓGICA DE NEGÓCIO ---
+def calc_payout(atig):
+    if atig < 90: return 0.0
+    if atig >= 115: return 1.50
+    return 0.8 + (atig - 90) * (0.02) if atig < 100 else 1.0 + (atig - 100) * (0.0333)
 
-# --- SIDEBAR (CONFIGURAÇÃO) ---
+# --- SIDEBAR ---
 with st.sidebar:
-    st.title("📂 Menu")
-    aba = st.radio("Ir para:", ["📊 Dashboard Prime", "📝 Lançar Resultados", "⚙️ Ajustes de Salário"])
+    st.title("🛡️ SalesPulse")
+    st.subheader("Configurações Base")
+    sal_fixo = st.number_input("Salário Base (R$)", value=7990.84)
+    target_p = st.number_input("Target RV (%)", value=43.0) / 100
     st.divider()
-    
-    # Valores globais
-    salario_fixo = st.number_input("Meu Salário Fixo (R$)", value=7990.84)
-    target_rv_p = st.number_input("Meu Target RV (%)", value=43.0) / 100
-    st.caption(f"Valor do Target: R$ {(salario_fixo * target_rv_p):,.2f}")
+    page = st.radio("Navegar por:", ["📊 Dashboard de Ganhos", "📝 Lançar Metas"])
 
-# --- BANCO DE DADOS TEMPORÁRIO ---
-meses_lista = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
-cats = ["Net Sales Adulto", "Net Sales Infantil", "Net Sales Toiletries", "Vol Adulto", "Vol Infantil", "Vol Toiletries"]
+# --- DATABASE EM SESSÃO ---
+meses = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
+cats = ["NS Adulto", "NS Infantil", "NS Toiletries", "Vol Adulto", "Vol Infantil", "Vol Toiletries"]
 pesos = [0.20, 0.15, 0.15, 0.20, 0.15, 0.15]
 
 if 'db' not in st.session_state:
-    st.session_state.db = {m: {c: {"meta": 100.0, "real": 100.0} for c in cats} for m in meses_lista}
+    # Iniciando com 100% de atingimento para visualização inicial
+    st.session_state.db = {m: {c: {"meta": 100.0, "real": 100.0} for c in cats} for m in meses}
 
 # --- TELAS ---
 
-if aba == "📝 Lançar Resultados":
-    st.header("Lançamento de Metas e Realizados")
-    m_ref = st.selectbox("Selecione o Mês", meses_lista)
+if page == "📝 Lançar Metas":
+    st.header("Lançamento de Performance")
+    m_sel = st.selectbox("Selecione o Mês", meses)
     
-    with st.form("form_vendas"):
-        cols = st.columns(2)
+    with st.container():
+        cols = st.columns(3)
         for i, c in enumerate(cats):
-            col_idx = 0 if i < 3 else 1
-            with cols[col_idx]:
-                st.write(f"**{c}**")
-                st.session_state.db[m_ref][c]["meta"] = st.number_input(f"Meta ({c})", value=st.session_state.db[m_ref][c]["meta"], key=f"m{i}")
-                st.session_state.db[m_ref][c]["real"] = st.number_input(f"Real ({c})", value=st.session_state.db[m_ref][c]["real"], key=f"r{i}")
-        st.form_submit_button("Atualizar Sistema")
+            with cols[i % 3]:
+                st.markdown(f"**{c}**")
+                st.session_state.db[m_sel][c]["meta"] = st.number_input("Meta", key=f"m{i}", value=st.session_state.db[m_sel][c]["meta"])
+                st.session_state.db[m_sel][c]["real"] = st.number_input("Real", key=f"r{i}", value=st.session_state.db[m_sel][c]["real"])
+    st.success("Dados atualizados automaticamente.")
 
-elif aba == "📊 Dashboard Prime":
-    st.title("📈 Performance Sales Pulse")
+else:
+    st.title("📊 Resumo de Remuneração")
     
-    # Processamento dos Dados
-    resumo_mês = []
-    for m in meses_lista:
-        soma_fator_payout = 0
+    # Processar dados
+    res = []
+    for m in meses:
+        fator_payout = 0
         for i, c in enumerate(cats):
             meta = st.session_state.db[m][c]["meta"]
             real = st.session_state.db[m][c]["real"]
-            ating = (real/meta)*100 if meta > 0 else 0
-            soma_fator_payout += (calcular_payout(ating) * pesos[i])
+            atig = (real/meta)*100 if meta > 0 else 0
+            fator_payout += (calc_payout(atig) * pesos[i])
         
-        v_rv = (salario_fixo * target_rv_p) * soma_fator_payout
-        resumo_mês.append({"Mês": m, "Fixo": salario_fixo, "Variável": v_rv, "Total": salario_fixo + v_rv})
+        rv = (sal_fixo * target_p) * fator_payout
+        res.append({"Mês": m, "Fixo": sal_fixo, "Variável": rv, "Total": sal_fixo + rv})
     
-    df = pd.DataFrame(resumo_mês)
+    df = pd.DataFrame(res)
     
-    # Cards Superiores
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Ganhos Totais (Ano)", f"R$ {df['Total'].sum():,.2f}")
-    c2.metric("Média Mensal", f"R$ {df['Total'].mean():,.2f}")
-    c3.metric("Total Variável", f"R$ {df['Variável'].sum():,.2f}")
-    c4.metric("Atingimento Médio", f"{((df['Variável'].sum()/(salario_fixo*target_rv_p*12))*100):,.1f}%")
+    # KPIs SUPERIORES (Clean Cards)
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Receita Total Ano (Bruto)", f"R$ {df['Total'].sum():,.2f}")
+    c2.metric("Média Mensal (Fixo + RV)", f"R$ {df['Total'].mean():,.2f}")
+    c3.metric("Total Variável (Bônus)", f"R$ {df['Variável'].sum():,.2f}")
 
     st.divider()
+
+    # ABAS DE VISUALIZAÇÃO
+    tab_graf, tab_tri = st.tabs(["📉 Evolução Mensal", "🏢 Visão por Quarter (Q)"])
     
-    # Gráfico Principal
-    st.subheader("Evolução Mensal: Salário + Variável")
-    st.bar_chart(df.set_index("Mês")[["Fixo", "Variável"]])
+    with tab_graf:
+        st.subheader("Composição de Renda Mensal")
+        st.bar_chart(df.set_index("Mês")[["Fixo", "Variável"]])
+    
+    with tab_tri:
+        st.subheader("Fechamento de Recuperação Trimestral")
+        df['Q'] = ["Q1", "Q1", "Q1", "Q2", "Q2", "Q2", "Q3", "Q3", "Q3", "Q4", "Q4", "Q4"]
+        q_view = df.groupby('Q')[["Fixo", "Variável", "Total"]].sum()
+        st.dataframe(q_view.style.format("R$ {:,.2f}"), use_container_width=True)
 
-    # Tabela de Quarters (Recuperação)
-    st.subheader("Consolidado Trimestral (Recuperação Q)")
-    df['Q'] = ["Q1", "Q1", "Q1", "Q2", "Q2", "Q2", "Q3", "Q3", "Q3", "Q4", "Q4", "Q4"]
-    df_q = df.groupby('Q')[["Fixo", "Variável", "Total"]].sum()
-    st.table(df_q.style.format("R$ {:,.2f}"))
-
-elif aba == "⚙️ Ajustes de Salário":
-    st.header("Configurações do Perfil")
-    st.write("Ajuste aqui seus dados contratuais para que o simulador reflita sua realidade.")
-    st.info("As regras de curva (90% a 115%) seguem a Política Softys 2026.")
+st.divider()
+st.caption("SalesPulse v2.0 | Dados baseados na Política Softys 2026")
